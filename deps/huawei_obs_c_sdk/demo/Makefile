@@ -1,0 +1,33 @@
+PTHREAD = -lpthread
+ifdef BUILD_FOR_NDK_AARCH64
+    CXX=aarch64-linux-android-gcc
+    SPEC_LIB = -lm -lz
+    PTHREAD = 
+else
+    ifdef BUILD_FOR_ARM
+        CXX=aarch64-linux-gnu-gcc
+    else
+        CXX=gcc
+    endif
+endif
+EXTRA_LIB_DIR=-L../lib
+EXTRA_INCLUDE_DIR=-I../include
+
+LIB=-lcjson -leSDKOBS -lboundscheck
+LINKOPT=$(EXTRA_LIB_DIR) $(LIB) $(SPEC_LIB)
+
+TARGET_DEMO=demo
+TARGET_TEST=object_test
+
+SRC_DEMO=demo_common.c demo.c
+SRC_TEST=demo_common.c object_test.c
+
+export LD_LIBRARY_PATH=../lib
+all: demo object_test
+$(TARGET_DEMO):
+	$(CXX) $(SRC_DEMO) $(EXTRA_INCLUDE_DIR) $(LINKOPT) $(PTHREAD) -fstack-protector-strong -fPIE -pie --param ssp-buffer-size=4 -Wstack-protector -Wl,--disable-new-dtags,--rpath ../lib -Wl,-z,relro,-z,now -Wl,-z,noexecstack -fPIC -o $(TARGET_DEMO)
+
+$(TARGET_TEST):
+	$(CXX) $(SRC_TEST) $(EXTRA_INCLUDE_DIR) $(LINKOPT) $(PTHREAD) -fstack-protector-strong -fPIE -pie --param ssp-buffer-size=4 -Wstack-protector -Wl,--disable-new-dtags,--rpath ../lib -Wl,-z,relro,-z,now -Wl,-z,noexecstack -fPIC -o $(TARGET_TEST)
+clean:
+	rm -f object_test demo;rm -f *.o

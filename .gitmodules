@@ -1,0 +1,3 @@
+[submodule "deps/huaweicloud-sdk-c-obs"]
+	path = deps/huaweicloud-sdk-c-obs
+	url = https://github.com/huaweicloud/huaweicloud-sdk-c-obs.git

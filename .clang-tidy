@@ -1,0 +1,30 @@
+---
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  portability-*,
+#  modernize-*,
+#  misc-*,
+#  -misc-non-private-member-variables-in-classes,
+#  readability-*,
+#  google-*,
+#  -google-readability-namespace-comments,
+#  -google-runtime-int,
+#  -google-runtime-references,
+#  -readability-named-parameter,
+#  -readability-braces-around-statements,
+#  -readability-magic-numbers
+
+
+# WarningsAsErrors: '*'
+WarningsAsErrors: 'performance-*'
+HeaderFilterRegex: '.*'
+AnalyzeTemporaryDtors: true  # 分析临时对象的析构行为
+FormatStyle: file  # 使用项目的 .clang-format 文件
+
+# ExtraArgs:
+# 新版本 https://github.com/llvm/llvm-project/issues/88390
+ExtraArgsBefore:
+  - '-std=c++17'
+#  - '-I./include'
