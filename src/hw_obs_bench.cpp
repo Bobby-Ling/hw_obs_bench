@@ -210,7 +210,12 @@ BENCHMARK_DEFINE_F(OBSBenchmark, put_object)(benchmark::State &state) {
         );
         tracer.save_csv();
 
+        std::vector<std::string> group_keys;
+        for (const auto &thread_keys : keys) {
+            group_keys.insert(group_keys.end(), thread_keys.begin(), thread_keys.end());
+        }
 
+        obs_client->delete_objects(group_keys);
     }
 }
 
