@@ -20,6 +20,8 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_COMMON_FLAGS "${CMAKE_COMMON_FLAGS} -ggdb3")
 elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
     # https://clang.llvm.org/docs/UsersManual.html#controlling-debugger-tuning
+    # https://bugs.llvm.org/show_bug.cgi?id=24202
+    # sudo apt install libstdc++6-9-dbg
     set(CMAKE_COMMON_FLAGS "${CMAKE_COMMON_FLAGS} -glldb")
     set(CMAKE_COMMON_FLAGS "${CMAKE_COMMON_FLAGS} -fstandalone-debug")
 endif()
