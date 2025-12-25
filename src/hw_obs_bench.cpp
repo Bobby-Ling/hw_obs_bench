@@ -147,23 +147,23 @@ std::string generate_data(size_t size) {
 }
 
 BENCHMARK_DEFINE_F(OBSBenchmark, put_object)(benchmark::State &state) {
-    const auto object_size = state.range(0);
-    const auto num_threads = state.range(1);
-    std::string data = generate_data(object_size);
-
-    const auto loop_count = get_loop_count(num_threads, object_size);
-
-    std::string type = "put_object";
-    // 为每个<thread_index, loop_index>创建一个唯一的 key
-    std::vector<std::vector<std::string>> keys(num_threads, std::vector<std::string>(loop_count));
-    for (int i = 0; i < num_threads; ++i) {
-        for (int j = 0; j < loop_count; ++j) {
-            keys[i][j] = fmt::format("{}_size{}_nthread{}_threadidx{}_loopcnt{}", type, object_size, num_threads, i, j);
-        }
-    }
-
     // 只执行一次
     for (auto _ : state) {
+        const auto object_size = state.range(0);
+        const auto num_threads = state.range(1);
+        std::string data = generate_data(object_size);
+
+        const auto loop_count = get_loop_count(num_threads, object_size);
+
+        std::string type = "put_object";
+        // 为每个<thread_index, loop_index>创建一个唯一的 key
+        std::vector<std::vector<std::string>> keys(num_threads, std::vector<std::string>(loop_count));
+        for (int i = 0; i < num_threads; ++i) {
+            for (int j = 0; j < loop_count; ++j) {
+                keys[i][j] = fmt::format("{}_size{}_nthread{}_threadidx{}_loopcnt{}", type, object_size, num_threads, i, j);
+            }
+        }
+
         std::vector<std::thread> threads;
         threads.reserve(num_threads);
 
@@ -209,25 +209,27 @@ BENCHMARK_DEFINE_F(OBSBenchmark, put_object)(benchmark::State &state) {
             trace_latencies
         );
         tracer.save_csv();
+
+
     }
 }
 
 BENCHMARK_DEFINE_F(OBSBenchmark, append_object)(benchmark::State &state) {
-    const auto object_size = state.range(0);
-    const auto num_threads = state.range(1);
-    std::string data = generate_data(object_size);
-
-    const auto loop_count = get_loop_count(num_threads, object_size);
-
-    std::string type = "append_object";
-    // 为每个thread创建一个唯一的 key
-    std::vector<std::string> keys(num_threads);
-    for (int i = 0; i < num_threads; ++i) {
-        keys[i] = fmt::format("{}_size{}_nthread{}_threadidx{}", type, object_size, num_threads, i);
-    }
-
     // 只执行一次
     for (auto _ : state) {
+        const auto object_size = state.range(0);
+        const auto num_threads = state.range(1);
+        std::string data = generate_data(object_size);
+
+        const auto loop_count = get_loop_count(num_threads, object_size);
+
+        std::string type = "append_object";
+        // 为每个thread创建一个唯一的 key
+        std::vector<std::string> keys(num_threads);
+        for (int i = 0; i < num_threads; ++i) {
+            keys[i] = fmt::format("{}_size{}_nthread{}_threadidx{}", type, object_size, num_threads, i);
+        }
+
         std::vector<std::thread> threads;
         threads.reserve(num_threads);
 
