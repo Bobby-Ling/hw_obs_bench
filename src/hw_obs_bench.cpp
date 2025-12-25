@@ -62,7 +62,7 @@ class Tracer {
     std::string to_csv() {
         std::unique_lock<std::mutex> lock(mutex_);
         std::string buffer;
-        buffer += "type,threads,object_size,total_ops,loop_count,seconds,ops_per_s,mb_per_s,lat_p50,lat_p90,lat_p99,latencies\n";
+        buffer += "type,threads,object_size,total_ops,loop_count,seconds,ops_per_s,mb_per_s,lat_p50,lat_p90,lat_p99,latencies,trace_latencies\n";
         for (const auto &row : rows_) {
             buffer += fmt::format(
                 "{},{},{},{},{},{:.6f},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},\"{}\",\"{}\"\n",
