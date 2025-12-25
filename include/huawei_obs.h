@@ -14,7 +14,7 @@
 
 #define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
 #define PBWIDTH 60
-void print_progress(std::size_t iter, std::size_t max_iter, bool force_end = false) {
+inline void print_progress(std::size_t iter, std::size_t max_iter, bool force_end = false) {
     double percentage = (double)iter / max_iter;
     bool end = (iter == max_iter) | force_end;
     int val = (int)(percentage * 100);
@@ -64,6 +64,9 @@ class HuaweiCloudObs {
             &put_object_handler,
             &data
         );
+
+        LOG_DEBUG("put key {} with object size: {}", key, object.size());
+
         LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "key: {} data.ret_status: {}", key, obs_get_status_name(data.ret_status));
     }
 
@@ -92,10 +95,11 @@ class HuaweiCloudObs {
             &data
         );
 
+        LOG_DEBUG("appending key {} with object size at [{}, {})", key, object.size(), start_pos,
+                  start_pos + data.obs_next_append_position);
+
         LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "key: {} data.ret_status: {}",
                    key, obs_get_status_name(data.ret_status));
-        LOG_DEBUG("appending key {} at [{}, {})", key, start_pos,
-                  start_pos + data.obs_next_append_position);
         return data.obs_next_append_position;
     }
 
