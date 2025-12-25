@@ -8,7 +8,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": "${command:pickArgs}",
-            "cwd": "${workspaceFolder}/build/bin"
+            "cwd": "${workspaceFolder}/"
         },
         {
             "name": "Python 调试程序: 包含参数的当前文件在当前目录",
@@ -31,17 +31,9 @@
             "request": "launch",
             "name": "(lldb) Launch",
             "program": "${command:cmake.launchTargetPath}",
-            "args": [
-                "database"
-            ],
+            "args": [],
             "cwd": "${command:cmake.launchTargetDirectory}",
-            "env": {
-                "SPDLOG_LEVEL": "main_logger=info,record=warn,optimizer=warn,execution=debug,transaction=debug",
-                "CONFIG_MVCC_BYPASS_INSERT_CONFLICT_DETECTION": "0",
-                "SQLLOGICTEST_MODE": "1",
-                "CONFIG_USE_NEW_PRINTER": "1",
-                "RMDB_PORT": "7000"
-            }
+            "env": {},
         },
         {
             "name": "(gdb) Cmake Launch",
@@ -49,9 +41,7 @@
             "request": "launch",
             // Resolved by CMake Tools:
             "program": "${command:cmake.launchTargetPath}",
-            "args": [
-                "database"
-            ],
+            "args": [],
             "stopAtEntry": false,
             "cwd": "${command:cmake.launchTargetDirectory}",
             "environment": [
@@ -60,6 +50,7 @@
                     // it gets resolved by CMake Tools:
                     "name": "PATH",
                     "value": "${env:PATH}:${command:cmake.getLaunchTargetDirectory}"
+
                 },
             ],
             // "externalConsole": true,
