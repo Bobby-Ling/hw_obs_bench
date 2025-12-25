@@ -297,25 +297,25 @@ BENCHMARK_DEFINE_F(OBSBenchmark, append_object)(benchmark::State &state) {
 // 比较的是什么:
 // put_object(content=data[size])和append_object(append_content=data[size])
 
-// BENCHMARK_REGISTER_F(OBSBenchmark, put_object)
-//     ->RangeMultiplier(2)
-//     ->Ranges({
-//         {1 << 12, 128 << 18},  // 4KB to 32MB
-//         {4, 32}               // 4 to 32 threads
-//     })
-//     // ->Ranges({
-//     //     {1 << 10, 128 << 20},  // 1KB to 128MB
-//     //     {1, 128}               // 1 to 128 threads
-//     // })
-//     ->Iterations(1)
-//     ->UseRealTime()
-//     ->Unit(benchmark::kMillisecond);
+BENCHMARK_REGISTER_F(OBSBenchmark, put_object)
+    ->RangeMultiplier(2)
+    // ->Ranges({
+    //     {1 << 12, 128 << 18},  // 4KB to 32MB
+    //     {4, 32}               // 4 to 32 threads
+    // })
+    ->Ranges({
+        {1 << 10, 128 << 20},  // 1KB to 128MB
+        {1, 128}               // 1 to 128 threads
+    })
+    ->Iterations(1)
+    ->UseRealTime()
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(OBSBenchmark, append_object)
     ->RangeMultiplier(2)
     ->Ranges({
-        {1 << 12, 128 << 18},  // 4KB to 32MB
-        {4, 32}               // 4 to 32 threads
+        {1 << 10, 128 << 20},  // 1KB to 128MB
+        {1, 128}               // 1 to 128 threads
     })
     ->Iterations(1)
     ->Threads(1)
