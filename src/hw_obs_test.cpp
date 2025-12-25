@@ -1,11 +1,12 @@
 #include "huawei_obs.h"
+#include "log.h"
 #include <gtest/gtest.h>
 #include <string>
 #include <random>
 
 class HuaweiCloudObsTest : public ::testing::Test {
 protected:
-    HuaweiCloudObs obs_client;
+    HuaweiCloudObs * obs_client;
 
     // 生成随机 Key 以避免测试冲突
     std::string generate_random_key(const std::string& prefix) {
@@ -26,6 +27,10 @@ protected:
         std::string data(size, 'a');
         return data;
     }
+
+    void SetUp() override {
+        obs_client = HuaweiCloudObs::get_instance();
+    }
 };
 
 // 测试 Put Object 功能
@@ -33,8 +38,8 @@ TEST_F(HuaweiCloudObsTest, PutObjectSuccess) {
     std::string key = generate_random_key("unittest_put");
     std::string data = "Hello OBS, this is a put test.";
 
-    // 验证调用不抛出异常（假设 LOG_ASSERT 失败会终止程序，这里主要验证流程跑通）
-    EXPECT_NO_THROW(obs_client.put_object(key, data));
+    EXPECT_NO_THROW(obs_client->put_object(key, data));
+    EXPECT_NO_THROW(obs_client->delete_objects({key}));
 }
 
 // 测试 Append Object 功能
@@ -46,7 +51,7 @@ TEST_F(HuaweiCloudObsTest, AppendObjectSuccess) {
     // 第一次追加，起始位置必须为 0
     size_t next_pos = 0;
     EXPECT_NO_THROW({
-        next_pos = obs_client.append_object(key, part1, 0);
+        next_pos = obs_client->append_object(key, part1, 0);
     });
 
     // 验证返回的下一次追加位置是否正确
@@ -54,18 +59,25 @@ TEST_F(HuaweiCloudObsTest, AppendObjectSuccess) {
 
     // 第二次追加，起始位置为上一次的返回值
     EXPECT_NO_THROW({
-        next_pos = obs_client.append_object(key, part2, next_pos);
+        next_pos = obs_client->append_object(key, part2, next_pos);
     });
 
     // 验证最终大小
     EXPECT_EQ(next_pos, part1.size() + part2.size());
+    EXPECT_NO_THROW(obs_client->delete_object(key));
 }
 
 TEST_F(HuaweiCloudObsTest, PutLargeObject) {
     std::string key = generate_random_key("unittest_large");
     std::string data = generate_data(1024 * 1024); // 1MB
 
-    EXPECT_NO_THROW(obs_client.put_object(key, data));
+    EXPECT_NO_THROW(obs_client->put_object(key, data));
+    EXPECT_NO_THROW(obs_client->delete_objects({key}));
+}
+
+// ./hw_obs_test --gtest_filter=HuaweiCloudObsTest.DeleteAll
+TEST_F(HuaweiCloudObsTest, DeleteAll) {
+    obs_client->delete_all();
 }
 
 int main(int argc, char **argv) {

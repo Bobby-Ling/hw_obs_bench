@@ -107,7 +107,7 @@ inline void init_logger() {
         // std::string log_pattern = "[%Y-%m-%d %T.%e][%^%l%$][%s:%#][%!] %v";
         // [17:29:31.540][info][main_logger][log.h:94][init_logger] initialized
         // %n: 模块名, 构造logger时传入
-        std::string log_pattern = "[%T.%e][%^%l%$][%n][%s:%#][%!] %v";
+        std::string log_pattern = "[%t][%T.%e][%^%l%$][%n][%s:%#][%!] %v";
 
         // 每一个logger和sink都是可以单独设置日志格式和日志级别的
         auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();

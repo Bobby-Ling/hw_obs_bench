@@ -2,16 +2,21 @@
 
 #include "config.h"
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <eSDKOBS.h>
 #include <log.h>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
 #define PBWIDTH 60
-void print_progress(double percentage, bool end = false) {
+void print_progress(std::size_t iter, std::size_t max_iter, bool force_end = false) {
+    double percentage = (double)iter / max_iter;
+    bool end = (iter == max_iter) | force_end;
     int val = (int)(percentage * 100);
     int lpad = (int)(percentage * PBWIDTH);
     int rpad = PBWIDTH - lpad;
@@ -23,18 +28,22 @@ void print_progress(double percentage, bool end = false) {
 }
 
 class HuaweiCloudObs {
-  public:
     HuaweiCloudObs() {
         init();
     }
-
     ~HuaweiCloudObs() {
-        // deinit();
+        deinit();
+    }
+
+  public:
+    static HuaweiCloudObs *get_instance() {
+        static HuaweiCloudObs instance;
+        return &instance;
     }
 
     void put_object(const std::string_view &key, const std::string_view &object) const {
         // 初始化存储上传数据的结构体
-        put_buffer_object_callback_data data = {
+        object_callback_data data = {
             // 流式上传数据buffer, 并赋值到上传数据结构中
             .put_buffer = object.data(),
             // 设置buffersize
@@ -55,12 +64,14 @@ class HuaweiCloudObs {
             &put_object_handler,
             &data
         );
-        LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "data.ret_status: {}", obs_get_status_name(data.ret_status));
+        LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "key: {} data.ret_status: {}", key, obs_get_status_name(data.ret_status));
     }
 
     std::size_t append_object(const std::string_view &key, const std::string_view &object, std::size_t start_pos) const {
+        LOG_DEBUG("key: {}, start_pos: {}", key, start_pos);
+
         // 初始化存储上传数据的结构体
-        put_buffer_object_callback_data data = {
+        object_callback_data data = {
             // 流式上传数据buffer, 并赋值到上传数据结构中
             .put_buffer = object.data(),
             // 设置buffersize
@@ -80,8 +91,142 @@ class HuaweiCloudObs {
             &append_object_handler,
             &data
         );
-        LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "data.ret_status: {}", obs_get_status_name(data.ret_status));
+
+        LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "key: {} data.ret_status: {}",
+                   key, obs_get_status_name(data.ret_status));
+        LOG_DEBUG("appending key {} at [{}, {})", key, start_pos,
+                  start_pos + data.obs_next_append_position);
         return data.obs_next_append_position;
+    }
+
+    void delete_object(const std::string_view &key) const {
+        // 要删除的对象信息
+        obs_object_info object_info = {
+            .key = (char *)key.data(),
+            .version_id = NULL
+        };
+        // 设置响应回调函数
+        obs_response_handler response_handler = {
+            &response_properties_callback, &response_complete_callback
+        };
+        object_callback_data data;
+        // 删除对象
+        ::delete_object(&base_option, &object_info, &response_handler, &data);
+        LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "key: {} ret_status: {}", key, obs_get_status_name(data.ret_status));
+    }
+
+    void batch_delete_objects(const std::vector<std::string> &keys) const {
+        ASSERT(0 < keys.size() && keys.size() <= 1000);
+        std::vector<obs_object_info> objectinfos;
+        objectinfos.reserve(keys.size());
+        for (const auto &key : keys) {
+            obs_object_info info = {
+                .key = const_cast<char *>(key.data()),
+                .version_id = NULL
+            };
+            objectinfos.push_back(info);
+        }
+        obs_delete_object_info delobj = {
+            .keys_number = static_cast<unsigned int>(objectinfos.size()),
+        };
+        // 设置响应回调函数
+        obs_delete_object_handler handler = {
+            {&response_properties_callback, &response_complete_callback},
+            delete_objects_data_callback
+        };
+        object_callback_data data;
+        // 批量删除对象
+        ::batch_delete_objects(&base_option, objectinfos.data(), &delobj, 0, &handler, &data);
+        LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "ret_status: {}", obs_get_status_name(data.ret_status));
+    }
+
+    void delete_objects(const std::vector<std::string> &keys) const {
+        std::vector<std::string> delete_batch_keys;
+        for (std::size_t i = 0; i < keys.size(); ++i) {
+            if ((i + 1) % 1000 == 0 || i == keys.size() - 1) {
+                delete_batch_keys.push_back(keys[i]);
+                batch_delete_objects(delete_batch_keys);
+                delete_batch_keys.clear();
+            } else {
+                delete_batch_keys.push_back(keys[i]);
+            }
+        }
+    }
+
+    std::size_t delete_all() {
+        LOG_WARN("deleting about {} keys", get_approximate_object_count());
+        auto all_keys = list_objects();
+        LOG_WARN("deleting {} keys", all_keys.size());
+        delete_objects(all_keys);
+        return all_keys.size();
+    }
+
+    // start_key not included in the result
+    std::vector<std::string> list_objects(std::string start_key = "", std::string prefix = "", std::string delimiter = "/") const {
+        std::string next_start_key = start_key;
+
+        bool list_all = start_key.empty() && prefix.empty() && delimiter.empty();
+
+        // 设置响应回调函数
+        obs_list_objects_handler list_bucket_objects_handler = {
+            {&response_properties_callback, &response_complete_callback},
+            &list_objects_callback
+        };
+
+        // 用户自定义回调数据
+        list_object_callback_data data = {
+            .approximate_key_count = list_all ? std::optional<std::size_t>(get_approximate_object_count()) : std::nullopt,
+        };
+
+        const int maxkeys = 1000;
+
+        while (true) {
+            const char *prefix_cstr = prefix.empty() ? NULL : prefix.c_str();
+            const char *start_key_cstr = next_start_key.empty() ? NULL : next_start_key.c_str();
+            const char *delimiter_cstr = delimiter.empty() ? NULL : delimiter.c_str();
+
+            data.batch_keys.clear();
+
+            // 列举对象
+            ::list_bucket_objects(
+                &base_option,
+                prefix_cstr,
+                start_key_cstr,
+                delimiter_cstr,
+                maxkeys,
+                &list_bucket_objects_handler,
+                &data
+            );
+
+            if (data.batch_keys.empty()) {
+                break;
+            }
+            next_start_key = data.batch_keys.back();
+        };
+        return data.keys;
+    }
+
+    std::size_t get_approximate_object_count() const {
+        // 设置响应回调函数
+        obs_response_handler response_handler = {
+                &response_properties_callback,
+                &response_complete_callback
+            };
+        obs_sever_callback_data data;
+        // 定义桶容量缓存及对象数缓存
+        char capacity[OBS_COMMON_LEN_256 + 1] = {0};
+        char obj_num[OBS_COMMON_LEN_256 + 1] = {0};
+        // 获取桶存量信息
+        get_bucket_storage_info(
+            &base_option,
+            OBS_COMMON_LEN_256 + 1,
+            capacity,
+            OBS_COMMON_LEN_256 + 1,
+            obj_num,
+            &response_handler,
+            &data
+        );
+        return std::stoull(obj_num);
     }
 
     // void create_bucket(const std::string *bucket_name) {
@@ -89,12 +234,12 @@ class HuaweiCloudObs {
     //     obs_options options = base_option;
     //     // 设置桶的存储类别，此处以标准存储为例
     //     options.bucket_options.storage_class = OBS_STORAGE_CLASS_STANDARD;
-    //     obs_status ret_status = OBS_STATUS_BUTT;
+    //     object_callback_data data;
     //     const char *bucket_location = CONFIG::BUCKET_LOCATION.data();
     //     // 创建桶，并设置桶的ACL权限，此处以设置桶为私有为例
-    //     ::create_bucket(&options, OBS_CANNED_ACL_PRIVATE, bucket_location, &response_handler, &ret_status);
+    //     ::create_bucket(&options, OBS_CANNED_ACL_PRIVATE, bucket_location, &response_handler, &data);
     //     // 判断请求是否成功
-    //     LOG_ASSERT(OBS_STATUS_OK == ret_status, "");
+    //     LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "");
     // }
 
   private:
@@ -137,12 +282,19 @@ class HuaweiCloudObs {
         });
     }
 
-    struct put_buffer_object_callback_data {
+    struct object_callback_data {
+        obs_status ret_status = OBS_STATUS_BUTT;
         const char *put_buffer;
         uint64_t buffer_size;
         uint64_t cur_offset;
         std::size_t obs_next_append_position;
-        obs_status ret_status;
+    };
+
+    struct list_object_callback_data {
+        obs_status ret_status = OBS_STATUS_BUTT;
+        std::vector<std::string> keys;
+        std::vector<std::string> batch_keys;
+        std::optional<std::size_t> approximate_key_count;
     };
 
     // 响应回调函数，可以在这个回调中把properties的内容记录到callback_data(用户自定义回调数据)中
@@ -160,7 +312,7 @@ class HuaweiCloudObs {
         }
 
         if (properties->obs_next_append_position) {
-            static_cast<put_buffer_object_callback_data*>(callback_data)->obs_next_append_position = std::atoll(properties->obs_next_append_position);
+            static_cast<object_callback_data*>(callback_data)->obs_next_append_position = std::atoll(properties->obs_next_append_position);
         }
 
         // 打印响应信息
@@ -208,7 +360,7 @@ class HuaweiCloudObs {
     }
     static void response_complete_callback(obs_status status, const obs_error_details *error, void *callback_data) {
         if (callback_data) {
-            put_buffer_object_callback_data *data = (put_buffer_object_callback_data *)callback_data;
+            object_callback_data *data = (object_callback_data *)callback_data;
             data->ret_status = status;
         } else {
             printf("Callback_data is NULL");
@@ -237,8 +389,8 @@ class HuaweiCloudObs {
         }
     }
     static int put_buffer_data_callback(int buffer_size, char *buffer, void *callback_data) {
-        put_buffer_object_callback_data *data =
-            (put_buffer_object_callback_data *)callback_data;
+        object_callback_data *data =
+            (object_callback_data *)callback_data;
         int toRead = 0;
         if (data->buffer_size) {
             toRead = ((data->buffer_size > (unsigned)buffer_size) ? (unsigned)buffer_size : data->buffer_size);
@@ -249,12 +401,35 @@ class HuaweiCloudObs {
         data->cur_offset += toRead;
         if (data->buffer_size) {
             // printf("%llu bytes remaining ", (unsigned long long)data->buffer_size);
-            double percentage = ((originalContentLength - data->buffer_size) * 100) / originalContentLength;
             // printf("(%d%% complete) ...\n", (int)(percentage * 100));
-            print_progress(percentage / 100);
-        } else {
-            // printf("\n");
+            print_progress(originalContentLength - data->buffer_size, originalContentLength);
         }
         return toRead;
+    }
+    static obs_status delete_objects_data_callback(int contentsCount, obs_delete_objects *delobjs, void *callbackData) {
+        int i;
+        for (i = 0; i < contentsCount; i++) {
+            const obs_delete_objects *content = &(delobjs[i]);
+            // LOG_DEBUG("delete object result:\nobject key:{}\nerror code:{}\nerror message:{}\ndelete marker:{}\ndelete marker version_id:{}\n", content->key, content->code, content->message, content->delete_marker, content->delete_marker_version_id);
+        }
+        LOG_DEBUG("deleted {} keys", contentsCount);
+        return OBS_STATUS_OK;
+    }
+    static obs_status list_objects_callback(int is_truncated, const char *next_marker, int contents_count, const obs_list_objects_content *contents, int common_prefixes_count, const char **common_prefixes, void *callback_data) {
+        list_object_callback_data *data = static_cast<list_object_callback_data*>(callback_data);
+
+        // 收集对象键
+        for (int i = 0; i < contents_count; i++) {
+            data->keys.push_back(contents[i].key);
+            data->batch_keys.push_back(contents[i].key);
+        }
+
+        if (data->approximate_key_count.has_value()) {
+            print_progress(data->keys.size(), data->approximate_key_count.value());
+        }
+
+        LOG_DEBUG("collected {} keys", data->keys.size());
+
+        return OBS_STATUS_OK;
     }
 };
