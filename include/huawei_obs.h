@@ -402,7 +402,7 @@ class HuaweiCloudObs {
         if (data->buffer_size) {
             // printf("%llu bytes remaining ", (unsigned long long)data->buffer_size);
             // printf("(%d%% complete) ...\n", (int)(percentage * 100));
-            print_progress(originalContentLength - data->buffer_size, originalContentLength);
+            // print_progress(originalContentLength - data->buffer_size, originalContentLength);
         }
         return toRead;
     }
