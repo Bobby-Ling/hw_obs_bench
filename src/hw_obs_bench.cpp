@@ -117,7 +117,7 @@ class OBSBenchmark : public benchmark::Fixture {
 
   protected:
     const HuaweiCloudObs * obs_client;
-    Tracer tracer;
+    static Tracer tracer;
 
     static inline std::size_t LOOP_MIN = 10;
 
