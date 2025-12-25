@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <eSDKOBS.h>
+#include <iostream>
 #include <log.h>
 #include <mutex>
 #include <optional>
@@ -158,9 +159,9 @@ class HuaweiCloudObs {
     }
 
     std::size_t delete_all() {
-        LOG_WARN("deleting about {} keys", get_approximate_object_count());
+        std::cout << fmt::format("deleting about {} keys\n", get_approximate_object_count());
         auto all_keys = list_objects();
-        LOG_WARN("deleting {} keys", all_keys.size());
+        std::cout << fmt::format("deleting {} keys\n", all_keys.size());
         delete_objects(all_keys);
         return all_keys.size();
     }
