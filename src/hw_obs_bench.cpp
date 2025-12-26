@@ -176,14 +176,24 @@ BENCHMARK_DEFINE_F(OBSBenchmark, put_object)(benchmark::State &state) {
                 std::vector<double> thread_local_latencies;
                 thread_local_latencies.reserve(loop_count);
                 for (int j = 0; j < loop_count; ++j) {
-                    auto t1 = std::chrono::high_resolution_clock::now();
+                    for (std::size_t retry_count = 0; retry_count < 3; ++retry_count) {
+                        try {
+                            auto t1 = std::chrono::high_resolution_clock::now();
 
-                    obs_client->put_object(keys[i][j], data);
-                    // std::this_thread::sleep_for(std::chrono::milliseconds(1 + j));
+                            obs_client->put_object(keys[i][j], data);
+                            // std::this_thread::sleep_for(std::chrono::milliseconds(1 + j));
 
-                    auto t2 = std::chrono::high_resolution_clock::now();
-                    double lat_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
-                    thread_local_latencies.push_back(lat_ms);
+                            auto t2 = std::chrono::high_resolution_clock::now();
+                            double lat_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
+                            thread_local_latencies.push_back(lat_ms);
+                            break;
+                        } catch (const std::exception &e) {
+                            LOG_WARN("Exception: {} retry_count: {}", e.what(), retry_count);
+                            if (retry_count == 2) {
+                                throw;
+                            }
+                        }
+                    }
                 }
                 std::lock_guard<std::mutex> lock(lat_mutex);
                 group_latencies.insert(group_latencies.end(), thread_local_latencies.begin(), thread_local_latencies.end());
@@ -249,14 +259,24 @@ BENCHMARK_DEFINE_F(OBSBenchmark, append_object)(benchmark::State &state) {
                 thread_local_latencies.reserve(loop_count);
                 std::size_t next_start_pos = 0;
                 for (int j = 0; j < loop_count; ++j) {
-                    auto t1 = std::chrono::high_resolution_clock::now();
+                    for (std::size_t retry_count = 0; retry_count < 3; ++retry_count) {
+                        try {
+                            auto t1 = std::chrono::high_resolution_clock::now();
 
-                    next_start_pos = obs_client->append_object(keys[i], data, next_start_pos);
-                    // std::this_thread::sleep_for(std::chrono::milliseconds(1 + j));
+                            next_start_pos = obs_client->append_object(keys[i], data, next_start_pos);
+                            // std::this_thread::sleep_for(std::chrono::milliseconds(1 + j));
 
-                    auto t2 = std::chrono::high_resolution_clock::now();
-                    double lat_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
-                    thread_local_latencies.push_back(lat_ms);
+                            auto t2 = std::chrono::high_resolution_clock::now();
+                            double lat_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
+                            thread_local_latencies.push_back(lat_ms);
+                            break;
+                        } catch (const std::exception &e) {
+                            LOG_WARN("Exception: {} retry_count: {}", e.what(), retry_count);
+                            if (retry_count == 2) {
+                                throw;
+                            }
+                        }
+                    }
                 }
                 std::lock_guard<std::mutex> lock(lat_mutex);
                 group_latencies.insert(group_latencies.end(), thread_local_latencies.begin(), thread_local_latencies.end());
@@ -305,30 +325,27 @@ BENCHMARK_DEFINE_F(OBSBenchmark, append_object)(benchmark::State &state) {
 // 比较的是什么:
 // put_object(content=data[size])和append_object(append_content=data[size])
 
-BENCHMARK_REGISTER_F(OBSBenchmark, put_object)
-    ->RangeMultiplier(2)
+static void CustomArguments(benchmark::internal::Benchmark* b) {
+    b->RangeMultiplier(2)
     // ->Ranges({
     //     {1 << 12, 128 << 18},  // 4KB to 32MB
     //     {4, 32}               // 4 to 32 threads
     // })
     ->Ranges({
-        {1 << 10, 128 << 20},  // 1KB to 128MB
-        {1, 128}               // 1 to 128 threads
+        // {1 << 10, 128 << 20},  // 1KB to 128MB
+        {1 << 20, 128 << 20},  // 1KB to 128MB
+        {128, 128}               // 1 to 128 threads
     })
     ->Iterations(1)
     ->UseRealTime()
     ->Unit(benchmark::kMillisecond);
+}
+
+BENCHMARK_REGISTER_F(OBSBenchmark, put_object)
+    ->Apply(CustomArguments);
 
 BENCHMARK_REGISTER_F(OBSBenchmark, append_object)
-    ->RangeMultiplier(2)
-    ->Ranges({
-        {1 << 10, 128 << 20},  // 1KB to 128MB
-        {1, 128}               // 1 to 128 threads
-    })
-    ->Iterations(1)
-    ->Threads(1)
-    ->UseRealTime()
-    ->Unit(benchmark::kMillisecond);
+    ->Apply(CustomArguments);
 
 int main(int argc, char **argv) {
     init_logger();

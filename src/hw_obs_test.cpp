@@ -75,6 +75,12 @@ TEST_F(HuaweiCloudObsTest, PutLargeObject) {
     EXPECT_NO_THROW(obs_client->delete_objects({key}));
 }
 
+TEST_F(HuaweiCloudObsTest, Throw) {
+    std::string key = generate_random_key("unittest_throw");
+    std::string data = "Hello OBS, this is a put test.";
+    EXPECT_THROW(obs_client->append_object(key, data, 1000), std::exception);
+}
+
 // ./hw_obs_test --gtest_filter=HuaweiCloudObsTest.DeleteAll
 TEST_F(HuaweiCloudObsTest, DeleteAll) {
     obs_client->delete_all();

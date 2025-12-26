@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include "fmt/core.h"
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -11,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
@@ -28,6 +30,40 @@ inline void print_progress(std::size_t iter, std::size_t max_iter, bool force_en
     fflush(stdout);
 }
 
+template <>
+struct fmt::formatter<obs_error_details> : fmt::formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(const obs_error_details& error, FormatContext& ctx) const {
+        std::string msg;
+        if (error.message) {
+            msg += fmt::format("Error Message: \n   {}\n", error.message);
+        }
+        if (error.resource) {
+            msg += fmt::format("Error Resource: \n  {}\n", error.resource);
+        }
+        if (error.further_details) {
+            msg += fmt::format("Error further_details: \n   {}\n", error.further_details);
+        }
+        if (error.extra_details_count) {
+            int i;
+            for (i = 0; i < error.extra_details_count; i++) {
+                msg += fmt::format("Error Extra Detail({}):\n   {}:{}\n", i, error.extra_details[i].name, error.extra_details[i].value);
+            }
+        }
+        if (error.error_headers_count) {
+            int i;
+            for (i = 0; i < error.error_headers_count; i++) {
+                const char *errorHeader = error.error_headers[i];
+                msg += fmt::format("Error Headers({}):\n    {}\n", i, errorHeader == NULL ? "NULL Header" : errorHeader);
+            }
+        }
+
+        auto out = ctx.out();
+        out = fmt::format_to(out, "{}", msg);
+        return out;
+    }
+};
+
 class HuaweiCloudObs {
     HuaweiCloudObs() {
         init();
@@ -37,6 +73,31 @@ class HuaweiCloudObs {
     }
 
   public:
+    class Error : public std::exception {
+      public:
+        Error(const std::string &msg, obs_status status, const obs_error_details &error)
+            : status(status), error(error) {
+            _msg = fmt::format("Error: {}, status: {} details: {}", msg, obs_get_status_name(status), error);
+            PRINT_STACK_TRACE();
+        }
+
+        Error(const std::string &msg) : Error(msg, {}, {}) {}
+
+        Error() : Error("") {}
+
+        const char *what() const noexcept override {
+            // PRINT_STACK_TRACE();
+            return _msg.c_str();
+        }
+
+        int get_msg_len() { return _msg.length(); }
+
+        std::string _msg;
+
+        const obs_status status = {};
+        const obs_error_details error = {};
+    };
+
     static HuaweiCloudObs *get_instance() {
         static HuaweiCloudObs instance;
         return &instance;
@@ -46,7 +107,7 @@ class HuaweiCloudObs {
         // 初始化存储上传数据的结构体
         object_callback_data data = {
             // 流式上传数据buffer, 并赋值到上传数据结构中
-            .put_buffer = object.data(),
+            .buffer = object.data(),
             // 设置buffersize
             .buffer_size = object.size(),
         };
@@ -68,7 +129,13 @@ class HuaweiCloudObs {
 
         LOG_DEBUG("put key {} with object size: {}", key, object.size());
 
-        LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "key: {} data.ret_status: {}", key, obs_get_status_name(data.ret_status));
+        if (OBS_STATUS_OK != data.common.ret_status) {
+            throw Error(
+                fmt::format("Error in put_object, key: {}, size: {}", key, object.size()),
+                data.common.ret_status,
+                data.common.error_details
+            );
+        }
     }
 
     std::size_t append_object(const std::string_view &key, const std::string_view &object, std::size_t start_pos) const {
@@ -77,7 +144,7 @@ class HuaweiCloudObs {
         // 初始化存储上传数据的结构体
         object_callback_data data = {
             // 流式上传数据buffer, 并赋值到上传数据结构中
-            .put_buffer = object.data(),
+            .buffer = object.data(),
             // 设置buffersize
             .buffer_size = object.size(),
         };
@@ -99,8 +166,13 @@ class HuaweiCloudObs {
         LOG_DEBUG("appending key {} with object size at [{}, {})", key, object.size(), start_pos,
                   start_pos + data.obs_next_append_position);
 
-        LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "key: {} data.ret_status: {}",
-                   key, obs_get_status_name(data.ret_status));
+        if (OBS_STATUS_OK != data.common.ret_status) {
+            throw Error(
+                fmt::format("Error in append_object, key: {}, size: {}, at [{}, {})", key, object.size(), start_pos, start_pos + data.obs_next_append_position),
+                data.common.ret_status,
+                data.common.error_details
+            );
+        }
         return data.obs_next_append_position;
     }
 
@@ -117,7 +189,13 @@ class HuaweiCloudObs {
         object_callback_data data;
         // 删除对象
         ::delete_object(&base_option, &object_info, &response_handler, &data);
-        LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "key: {} ret_status: {}", key, obs_get_status_name(data.ret_status));
+        if (OBS_STATUS_OK != data.common.ret_status) {
+            throw Error(
+                fmt::format("Error in delete_object, key: {}", key),
+                data.common.ret_status,
+                data.common.error_details
+            );
+        }
     }
 
     void batch_delete_objects(const std::vector<std::string> &keys) const {
@@ -142,7 +220,13 @@ class HuaweiCloudObs {
         object_callback_data data;
         // 批量删除对象
         ::batch_delete_objects(&base_option, objectinfos.data(), &delobj, 0, &handler, &data);
-        LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "ret_status: {}", obs_get_status_name(data.ret_status));
+        if (OBS_STATUS_OK != data.common.ret_status) {
+            throw Error(
+                fmt::format("Error in batch_delete_objects, all: {}", objectinfos.size()),
+                data.common.ret_status,
+                data.common.error_details
+            );
+        }
     }
 
     void delete_objects(const std::vector<std::string> &keys) const {
@@ -203,6 +287,8 @@ class HuaweiCloudObs {
                 &data
             );
 
+            LOG_ASSERT(OBS_STATUS_OK == data.common.ret_status, "status: {}", obs_get_status_name(data.common.ret_status));
+
             if (data.batch_keys.empty()) {
                 break;
             }
@@ -217,7 +303,7 @@ class HuaweiCloudObs {
                 &response_properties_callback,
                 &response_complete_callback
             };
-        obs_sever_callback_data data;
+        object_callback_data data;
         // 定义桶容量缓存及对象数缓存
         char capacity[OBS_COMMON_LEN_256 + 1] = {0};
         char obj_num[OBS_COMMON_LEN_256 + 1] = {0};
@@ -231,6 +317,8 @@ class HuaweiCloudObs {
             &response_handler,
             &data
         );
+        LOG_ASSERT(OBS_STATUS_OK == data.common.ret_status, "status: {}", obs_get_status_name(data.common.ret_status));
+
         return std::stoull(obj_num);
     }
 
@@ -244,7 +332,7 @@ class HuaweiCloudObs {
     //     // 创建桶，并设置桶的ACL权限，此处以设置桶为私有为例
     //     ::create_bucket(&options, OBS_CANNED_ACL_PRIVATE, bucket_location, &response_handler, &data);
     //     // 判断请求是否成功
-    //     LOG_ASSERT(OBS_STATUS_OK == data.ret_status, "");
+    //     LOG_WARN(OBS_STATUS_OK == data.common.ret_status, "");
     // }
 
   private:
@@ -287,31 +375,42 @@ class HuaweiCloudObs {
         });
     }
 
-    struct object_callback_data {
+    struct common_callback_data {
         obs_status ret_status = OBS_STATUS_BUTT;
-        const char *put_buffer;
+        obs_error_details error_details = {};
+    };
+
+    struct object_callback_data{
+        common_callback_data common;
+
+        const char *buffer;
         uint64_t buffer_size;
         uint64_t cur_offset;
         std::size_t obs_next_append_position;
     };
 
     struct list_object_callback_data {
-        obs_status ret_status = OBS_STATUS_BUTT;
-        std::vector<std::string> keys;
-        std::vector<std::string> batch_keys;
-        std::optional<std::size_t> approximate_key_count;
+        common_callback_data common;
+
+        std::vector<std::string> keys = {};
+        std::vector<std::string> batch_keys = {};
+        std::optional<std::size_t> approximate_key_count = {};
     };
+
+    static_assert(std::is_standard_layout<common_callback_data>::value == true);
+    static_assert(std::is_standard_layout<object_callback_data>::value == true);
+    static_assert(std::is_standard_layout<list_object_callback_data>::value == true);
 
     // 响应回调函数，可以在这个回调中把properties的内容记录到callback_data(用户自定义回调数据)中
     static obs_status response_properties_callback(const obs_response_properties *properties, void *callback_data) {
         if (properties == NULL) {
             printf("error! obs_response_properties is null!");
             if (callback_data != NULL) {
-                obs_sever_callback_data *data = (obs_sever_callback_data *)callback_data;
-                printf("server_callback buf is %s, len is %llu", data->buffer, data->buffer_len);
+                object_callback_data *data = (object_callback_data *)callback_data;
+                printf("server_callback buf is %s, len is %lu", data->buffer, data->buffer_size);
                 return OBS_STATUS_OK;
             } else {
-                printf("error! obs_sever_callback_data is null!");
+                printf("error! object_callback_data is null!");
                 return OBS_STATUS_OK;
             }
         }
@@ -363,34 +462,14 @@ class HuaweiCloudObs {
         */
         return OBS_STATUS_OK;
     }
+
     static void response_complete_callback(obs_status status, const obs_error_details *error, void *callback_data) {
         if (callback_data) {
-            object_callback_data *data = (object_callback_data *)callback_data;
+            common_callback_data *data = (common_callback_data *)callback_data;
             data->ret_status = status;
+            data->error_details = (error != NULL) ? *error : obs_error_details{};
         } else {
             printf("Callback_data is NULL");
-        }
-        if (error && error->message) {
-            printf("Error Message: \n   %s\n", error->message);
-        }
-        if (error && error->resource) {
-            printf("Error Resource: \n  %s\n", error->resource);
-        }
-        if (error && error->further_details) {
-            printf("Error further_details: \n   %s\n", error->further_details);
-        }
-        if (error && error->extra_details_count) {
-            int i;
-            for (i = 0; i < error->extra_details_count; i++) {
-                printf("Error Extra Detail(%d):\n   %s:%s\n", i, error->extra_details[i].name, error->extra_details[i].value);
-            }
-        }
-        if (error && error->error_headers_count) {
-            int i;
-            for (i = 0; i < error->error_headers_count; i++) {
-                const char *errorHeader = error->error_headers[i];
-                printf("Error Headers(%d):\n    %s\n", i, errorHeader == NULL ? "NULL Header" : errorHeader);
-            }
         }
     }
     static int put_buffer_data_callback(int buffer_size, char *buffer, void *callback_data) {
@@ -399,7 +478,7 @@ class HuaweiCloudObs {
         int toRead = 0;
         if (data->buffer_size) {
             toRead = ((data->buffer_size > (unsigned)buffer_size) ? (unsigned)buffer_size : data->buffer_size);
-            memcpy(buffer, data->put_buffer + data->cur_offset, toRead);
+            memcpy(buffer, data->buffer + data->cur_offset, toRead);
         }
         uint64_t originalContentLength = data->buffer_size;
         data->buffer_size -= toRead;
