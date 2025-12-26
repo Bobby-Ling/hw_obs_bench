@@ -117,15 +117,13 @@ class OBSBenchmark : public benchmark::Fixture {
 
   protected:
     const HuaweiCloudObs * obs_client;
-    static Tracer tracer;
+    static inline Tracer tracer;
 
     static inline std::size_t LOOP_MIN = 10;
 
     static inline std::size_t LOOP_MAX = 1000;
 
     static inline std::size_t LOOP_COUNT = 10;
-
-    std::atomic<uint64_t> key_counter{0};
 
     std::size_t get_loop_count(std::size_t threads, std::size_t object_size) const {
         // const int64_t N = LOOP_MIN;
